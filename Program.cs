@@ -4,31 +4,48 @@
   {
     static void Main(string[] args)
     {
-      Console.Write("> ");
-      var line = Console.ReadLine();
-      if (string.IsNullOrWhiteSpace(line))
-        return;
-
-      var parser = new Parser(line);
-      var syntaxTree = parser.Parse();
-
-      var color = Console.ForegroundColor;
-      Console.ForegroundColor = ConsoleColor.Gray;
-      Print(syntaxTree.Root);
-      Console.ForegroundColor = color;
-
-      if (syntaxTree.Diagnostics.Any())
+      bool showTree = false;
+      while (true)
       {
-        Console.ForegroundColor = ConsoleColor.Red;
-        foreach (var diagnostic in syntaxTree.Diagnostics)
-          Console.WriteLine(diagnostic);
-        Console.ForegroundColor = color;
-      }
-      else
-      {
-        var e = new Evaluator(syntaxTree.Root);
-        var result = e.Evaluate();
-        Console.WriteLine(result);
+        Console.Write("> ");
+        var line = Console.ReadLine();
+        if (string.IsNullOrWhiteSpace(line))
+          return;
+
+        if (line == "#showTree")
+        {
+          showTree = !showTree;
+          Console.WriteLine(showTree ? "Showing parse trees." : "Not showing parse trees");
+          continue;
+        }
+        else if (line == "#cls")
+        {
+          Console.Clear();
+          continue;
+        }
+
+        var syntaxTree = SyntaxTree.Parse(line);
+
+        var color = Console.ForegroundColor;
+        if (showTree)
+        {
+          Console.ForegroundColor = ConsoleColor.Gray;
+          Print(syntaxTree.Root);
+          Console.ForegroundColor = color;
+        }
+        if (syntaxTree.Diagnostics.Any())
+        {
+          Console.ForegroundColor = ConsoleColor.Red;
+          foreach (var diagnostic in syntaxTree.Diagnostics)
+            Console.WriteLine(diagnostic);
+          Console.ForegroundColor = color;
+        }
+        else
+        {
+          var e = new Evaluator(syntaxTree.Root);
+          var result = e.Evaluate();
+          Console.WriteLine(result);
+        }
       }
     }
 
@@ -68,7 +85,8 @@
     CloseParenthesisToken,
     InvalidToken,
     NumberExpression,
-    BinaryExpression
+    BinaryExpression,
+    ParenthesizedExpression
   }
 
   class SyntaxToken : SyntaxNode
@@ -237,6 +255,29 @@
     }
   }
 
+  sealed class ParenthesizedExpressionSyntax : ExpressionSyntax
+  {
+    public ParenthesizedExpressionSyntax(SyntaxToken openParenthesisToken, ExpressionSyntax expression, SyntaxToken closeParenthesisToken)
+    {
+      OpenParenthesisToken = openParenthesisToken;
+      Expression = expression;
+      CloseParenthesisToken = closeParenthesisToken;
+    }
+
+    public SyntaxToken OpenParenthesisToken { get; }
+    public ExpressionSyntax Expression { get; }
+    public SyntaxToken CloseParenthesisToken { get; }
+
+    public override SyntaxKind Kind => SyntaxKind.ParenthesizedExpression;
+
+    public override IEnumerable<SyntaxNode> GetChildren()
+    {
+      yield return OpenParenthesisToken;
+      yield return Expression;
+      yield return CloseParenthesisToken;
+    }
+  }
+
   sealed class SyntaxTree
   {
     public SyntaxTree(ExpressionSyntax root, SyntaxToken eoftoken, IEnumerable<string> diagnostic)
@@ -249,6 +290,13 @@
     public ExpressionSyntax Root { get; }
     public SyntaxToken EOFToken { get; }
     public IReadOnlyList<string> Diagnostics { get; }
+
+
+    public static SyntaxTree Parse(string text)
+    {
+      var parser = new Parser(text);
+      return parser.Parse();
+    }
   }
 
   // sealed class Numbe
@@ -306,6 +354,10 @@
       return new SyntaxToken(kind, Current.Position, "", new());
     }
 
+    private ExpressionSyntax ParseExpression()
+    {
+      return ParseAddition();
+    }
 
     public SyntaxTree Parse()
     {
@@ -340,6 +392,13 @@
 
     private ExpressionSyntax ParsePrimaryExpression()
     {
+      if (Current.Kind == SyntaxKind.OpenParenthesisToken)
+      {
+        var left = NextToken();
+        var expression = ParseExpression();
+        var right = Match(SyntaxKind.CloseParenthesisToken);
+        return new ParenthesizedExpressionSyntax(left, expression, right);
+      }
       var numberToken = Match(SyntaxKind.NumberToken);
       return new NumberExpressionSyntax(numberToken);
     }
@@ -377,6 +436,9 @@
         if (b.OperatorToken.Kind == SyntaxKind.DivideToken)
           return left / right;
       }
+
+      if (node is ParenthesizedExpressionSyntax p)
+        return EvaluateExpression(p.Expression);
       throw new Exception($"Unexpected node {node.Kind}");
     }
   }
