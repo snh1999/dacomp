@@ -309,18 +309,30 @@
 
     public SyntaxTree Parse()
     {
-      var expression = ParseExpression();
+      var expression = ParseAddition();
       var eofToken = Match(SyntaxKind.EOFToken);
       return new SyntaxTree(expression, eofToken, _diagnostics);
     }
 
-    private ExpressionSyntax ParseExpression()
+    private ExpressionSyntax ParseFactor()
     {
       var left = ParsePrimaryExpression();
-      while (Current.Kind == SyntaxKind.PlusToken || Current.Kind == SyntaxKind.MinusToken || Current.Kind == SyntaxKind.MultiplyToken || Current.Kind == SyntaxKind.DivideToken)
+      while (Current.Kind == SyntaxKind.MultiplyToken || Current.Kind == SyntaxKind.DivideToken)
       {
         var operatorToken = NextToken();
         var right = ParsePrimaryExpression();
+        left = new BinaryExpressionSyntax(left, operatorToken, right);
+      }
+      return left;
+    }
+
+    private ExpressionSyntax ParseAddition()
+    {
+      var left = ParseFactor();
+      while (Current.Kind == SyntaxKind.PlusToken || Current.Kind == SyntaxKind.MinusToken)
+      {
+        var operatorToken = NextToken();
+        var right = ParseFactor();
         left = new BinaryExpressionSyntax(left, operatorToken, right);
       }
       return left;
