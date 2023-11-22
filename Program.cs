@@ -11,24 +11,20 @@ namespace dacomp
         return;
 
       var parser = new Parser(line);
-      var expression = parser.Parse();
+      var syntaxTree = parser.Parse();
 
       var color = Console.ForegroundColor;
       Console.ForegroundColor = ConsoleColor.Gray;
-      Print(expression);
+      Print(syntaxTree.Root);
       Console.ForegroundColor = color;
 
-      var lexer = new Lexer(line);
-
-      // while (true)
-      // {
-      //   var token = lexer.NextToken();
-      //   if (token.Kind == SyntaxKind.EOFToken)
-      //     break;
-
-      //   Console.WriteLine(token.Kind);
-      // }
-
+      if (syntaxTree.Diagnostics.Any())
+      {
+        Console.ForegroundColor = ConsoleColor.Red;
+        foreach (var diagnostic in syntaxTree.Diagnostics)
+          Console.WriteLine(diagnostic);
+        Console.ForegroundColor = color;
+      }
     }
 
     static void Print(SyntaxNode node, string indent = "", bool isLast = true)
@@ -90,15 +86,22 @@ namespace dacomp
     }
 
   }
-
+  /// <summary>
+  /// Tokenizes the input string. into different kind of syntax
+  /// </summary>
   class Lexer
   {
     private readonly string _text;
     private int _position;
+    private List<string> _diagnostics = new List<string>();
+
     public Lexer(string text)
     {
       _text = text;
     }
+
+    public IEnumerable<string> Diagnostics => _diagnostics;
+
     private char Current
     {
       get
@@ -115,6 +118,10 @@ namespace dacomp
       _position++;
     }
 
+    /// <summary>
+    /// reads characters one by one from the input text and identifies the kind of token
+    /// </summary>
+    /// <returns> Syntax Token of the following character </returns>
     public SyntaxToken NextToken()
     {
       if (_position >= _text.Length)
@@ -159,14 +166,16 @@ namespace dacomp
       if (Current == ')')
         return new SyntaxToken(SyntaxKind.CloseParenthesisToken, _position++, ")", new());
 
+      _diagnostics.Add($"Invalid character input '{Current}'");
       return new SyntaxToken(SyntaxKind.InvalidToken, _position++, _text.Substring(_position - 1, 1), new());
     }
   }
-
+  /// <summary>
+  /// All nodes of syntax tree derive from this abstract class
+  /// </summary>
   abstract class SyntaxNode
   {
     public abstract SyntaxKind Kind { get; }
-
     public abstract IEnumerable<SyntaxNode> GetChildren();
   }
 
@@ -175,6 +184,9 @@ namespace dacomp
 
   }
 
+  /// <summary>
+  ///  Represents nodes in the syntax tree with numeric values
+  /// </summary>
   sealed class NumberExpressionSyntax : ExpressionSyntax
   {
     public NumberExpressionSyntax(SyntaxToken numberToken)
@@ -185,14 +197,15 @@ namespace dacomp
     public SyntaxToken NumberToken { get; }
     public override SyntaxKind Kind => SyntaxKind.NumberExpression;
 
-
-
     public override IEnumerable<SyntaxNode> GetChildren()
     {
       yield return NumberToken;
     }
   }
 
+  /// <summary>
+  /// Represents nodes in the syntax tree corresponding to arithmetic operation holding left and right expression operands along with the operator token.
+  /// </summary>
   sealed class BinaryExpressionSyntax : ExpressionSyntax
   {
     public BinaryExpressionSyntax(ExpressionSyntax left, SyntaxToken operatorToken, ExpressionSyntax right)
@@ -216,6 +229,19 @@ namespace dacomp
     }
   }
 
+  sealed class SyntaxTree
+  {
+    public SyntaxTree(ExpressionSyntax root, SyntaxToken eoftoken, IEnumerable<string> diagnostic)
+    {
+      Root = root;
+      EOFToken = eoftoken;
+      Diagnostics = diagnostic.ToArray();
+    }
+
+    public ExpressionSyntax Root { get; }
+    public SyntaxToken EOFToken { get; }
+    public IReadOnlyList<string> Diagnostics { get; }
+  }
 
   // sealed class Numbe
 
@@ -223,6 +249,7 @@ namespace dacomp
   {
     private readonly SyntaxToken[] _tokens;
     private int _position;
+    private List<string> _diagnostics = new List<string>();
 
     public Parser(string text)
     {
@@ -233,20 +260,24 @@ namespace dacomp
       while (true)
       {
         token = lexer.NextToken();
-
         if (token.Kind != SyntaxKind.WhiteSpaceToken && token.Kind != SyntaxKind.InvalidToken)
           tokenList.Add(token);
 
-        if (token.Kind == SyntaxKind.EOFToken) break;
+        if (token.Kind == SyntaxKind.EOFToken)
+          break;
       }
       _tokens = tokenList.ToArray();
+      _diagnostics.AddRange(lexer.Diagnostics);
 
     }
+
+    public IEnumerable<string> Diagnostics => _diagnostics;
 
     private SyntaxToken Peek(int offset)
     {
       var index = _position + offset;
-      if (index >= _tokens.Length) return _tokens[_tokens.Length - 1];
+      if (index >= _tokens.Length)
+        return _tokens[_tokens.Length - 1];
 
       return _tokens[index];
     }
@@ -263,20 +294,27 @@ namespace dacomp
     private SyntaxToken Match(SyntaxKind kind)
     {
       if (Current.Kind == kind) return NextToken();
+      _diagnostics.Add($"Error: Unexpected token, Expected: <{kind}> Found: <{Current.Kind}>");
       return new SyntaxToken(kind, Current.Position, "", new());
     }
 
-    public ExpressionSyntax Parse()
+
+    public SyntaxTree Parse()
+    {
+      var expression = ParseExpression();
+      var eofToken = Match(SyntaxKind.EOFToken);
+      return new SyntaxTree(expression, eofToken, _diagnostics);
+    }
+
+    private ExpressionSyntax ParseExpression()
     {
       var left = ParsePrimaryExpression();
-
       while (Current.Kind == SyntaxKind.PlusToken || Current.Kind == SyntaxKind.MinusToken)
       {
         var operatorToken = NextToken();
         var right = ParsePrimaryExpression();
         left = new BinaryExpressionSyntax(left, operatorToken, right);
       }
-
       return left;
     }
 
