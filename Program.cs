@@ -1,5 +1,4 @@
-﻿// dsfhasdfklasdklfjkl
-namespace dacomp
+﻿namespace dacomp
 {
   class Program
   {
@@ -24,6 +23,12 @@ namespace dacomp
         foreach (var diagnostic in syntaxTree.Diagnostics)
           Console.WriteLine(diagnostic);
         Console.ForegroundColor = color;
+      }
+      else
+      {
+        var e = new Evaluator(syntaxTree.Root);
+        var result = e.Evaluate();
+        Console.WriteLine(result);
       }
     }
 
@@ -136,7 +141,10 @@ namespace dacomp
 
         var length = _position - start;
         var text = _text.Substring(start, length);
-        int.TryParse(text, out var value);
+        if (!int.TryParse(text, out var value))
+        {
+          _diagnostics.Add($"Text {_text} is not a valid int32");
+        }
 
         return new SyntaxToken(SyntaxKind.NumberToken, start, text, value);
       }
@@ -309,7 +317,7 @@ namespace dacomp
     private ExpressionSyntax ParseExpression()
     {
       var left = ParsePrimaryExpression();
-      while (Current.Kind == SyntaxKind.PlusToken || Current.Kind == SyntaxKind.MinusToken)
+      while (Current.Kind == SyntaxKind.PlusToken || Current.Kind == SyntaxKind.MinusToken || Current.Kind == SyntaxKind.MultiplyToken || Current.Kind == SyntaxKind.DivideToken)
       {
         var operatorToken = NextToken();
         var right = ParsePrimaryExpression();
@@ -325,5 +333,40 @@ namespace dacomp
     }
   }
 
+  class Evaluator
+  {
+    private readonly ExpressionSyntax _root;
+
+    public Evaluator(ExpressionSyntax root)
+    {
+      this._root = root;
+    }
+
+    public int Evaluate()
+    {
+      return EvaluateExpression(_root);
+    }
+
+    private int EvaluateExpression(ExpressionSyntax node)
+    {
+      if (node is NumberExpressionSyntax n)
+        return (int)n.NumberToken.Value;
+      if (node is BinaryExpressionSyntax b)
+      {
+        var left = EvaluateExpression(b.Left);
+        var right = EvaluateExpression(b.Right);
+
+        if (b.OperatorToken.Kind == SyntaxKind.PlusToken)
+          return left + right;
+        if (b.OperatorToken.Kind == SyntaxKind.MinusToken)
+          return left - right;
+        if (b.OperatorToken.Kind == SyntaxKind.MultiplyToken)
+          return left * right;
+        if (b.OperatorToken.Kind == SyntaxKind.DivideToken)
+          return left / right;
+      }
+      throw new Exception($"Unexpected node {node.Kind}");
+    }
+  }
 
 }
