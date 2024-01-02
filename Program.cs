@@ -72,23 +72,6 @@
     }
   }
 
-  enum SyntaxKind
-  {
-    EOFToken,
-    NumberToken,
-    WhiteSpaceToken,
-    PlusToken,
-    MinusToken,
-    MultiplyToken,
-    DivideToken,
-    OpenParenthesisToken,
-    CloseParenthesisToken,
-    InvalidToken,
-    NumberExpression,
-    BinaryExpression,
-    ParenthesizedExpression
-  }
-
   class SyntaxToken : SyntaxNode
   {
     public SyntaxToken(SyntaxKind kind, int position, string text, object value)
